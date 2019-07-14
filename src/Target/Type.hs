@@ -5,7 +5,8 @@ module Target.Type
   ( BSym(..)
   , TSym(..)
   , TQ(..)
-  , asString
+  , As
+  , as
   ) where
 
 class BSym repr where
@@ -45,6 +46,15 @@ instance BSym (As Int) where
 instance TSym (As Int) where
   tarrow _ _ = As Nothing
 
+instance BSym (As Bool) where
+  tint    = As Nothing
+  tbool   = As $ return refl
+  tstring = As Nothing
+  tunit   = As Nothing
+
+instance TSym (As Bool) where
+  tarrow _ _ = As Nothing
+
 instance BSym (As String) where
   tint    = As Nothing
   tbool   = As Nothing
@@ -54,5 +64,5 @@ instance BSym (As String) where
 instance TSym (As String) where
   tarrow _ _ = As Nothing
 
-asString :: As String a -> c a -> Maybe (c String)
-asString (As meq) x = ($ x) . getEquality <$> meq
+as :: As t a -> c a -> Maybe (c t)
+as (As meq) x = ($ x) . getEquality <$> meq

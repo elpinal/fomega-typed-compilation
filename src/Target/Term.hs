@@ -1,10 +1,12 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Target.Term
   ( LSym(..)
   , Symantics(..)
+  , DynTerm(..)
 
   , module Target.Type
   ) where
@@ -38,8 +40,15 @@ instance (Monad m, LSym repr) => From m Literal (DynTerm repr) where
   from (String x) = return $ DynTerm tstring $ string x
   from Unit       = return $ DynTerm tunit $ unit
 
+realize :: TSym (As t) => DynTerm repr -> Maybe (repr t)
+realize (DynTerm (TQ ty) x) = as ty x
+
 instance (Monad m, Symantics repr) => From m Term (DynTerm repr) where
-  from (Lit l) = from l
-  from (Print t) = do
-    DynTerm (TQ ty) x <- from t
-    maybe (fail "not string") (return . DynTerm tunit . pr) $ asString ty x
+  from (Lit l)         = from l
+  from (Print t)       = from t >>= maybe (fail "not string") (return . DynTerm tunit . pr) . realize
+  from (Int2String t)  = from t >>= maybe (fail "not integer") (return . DynTerm tstring . int2string) . realize
+  from (Bool2String t) = from t >>= maybe (fail "not boolean") (return . DynTerm tstring . bool2string) . realize
+  from (Sub t1 t2)     = do
+    x <- from t1 >>= maybe (fail "not integer") return . realize
+    y <- from t2 >>= maybe (fail "not integer") return . realize
+    return $ DynTerm tint $ sub x y
