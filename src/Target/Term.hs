@@ -1,3 +1,5 @@
+{-# LANGUAGE ExistentialQuantification #-}
+
 module Target.Term
   ( LSym(..)
   , Symantics(..)
@@ -5,6 +7,7 @@ module Target.Term
   , module Target.Type
   ) where
 
+import qualified Facade.Term as F
 import Target.Type
 
 class LSym repr where
@@ -22,3 +25,8 @@ class LSym repr => Symantics repr where
   sub :: repr Int -> repr Int -> repr Int
   if_ :: repr Bool -> repr a -> repr a -> repr a
   concat_ :: repr String -> repr String -> repr String
+
+data DynTerm repr = forall t. DynTerm (repr t)
+
+from :: F.Term -> DynTerm repr
+from = undefined
