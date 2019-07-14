@@ -15,6 +15,7 @@ data Literal
   = Int Int
   | Bool Bool
   | String String
+  | Unit
   deriving (Eq, Show)
 
 data Term

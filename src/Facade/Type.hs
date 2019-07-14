@@ -7,6 +7,7 @@ data BaseType
   = TInt
   | TBool
   | TString
+  | TUnit
   deriving (Eq, Show)
 
 data Type
