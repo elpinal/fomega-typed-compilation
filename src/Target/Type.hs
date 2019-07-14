@@ -4,6 +4,8 @@
 module Target.Type
   ( BSym(..)
   , TSym(..)
+  , TQ(..)
+  , asString
   ) where
 
 class BSym repr where
@@ -14,6 +16,18 @@ class BSym repr where
 
 class BSym repr => TSym repr where
   tarrow :: repr a -> repr b -> repr (a -> b)
+
+-- A type quantifying over TSym interpreters.
+newtype TQ t = TQ { getTQ :: forall repr. TSym repr => repr t }
+
+instance BSym TQ where
+  tint = TQ tint
+  tbool = TQ tbool
+  tstring = TQ tstring
+  tunit = TQ tunit
+
+instance TSym TQ where
+  tarrow (TQ x) (TQ y) = TQ $ tarrow x y
 
 newtype Equality a b = Equality { getEquality :: forall c. c a -> c b }
 
@@ -39,3 +53,6 @@ instance BSym (As String) where
 
 instance TSym (As String) where
   tarrow _ _ = As Nothing
+
+asString :: As String a -> c a -> Maybe (c String)
+asString (As meq) x = ($ x) . getEquality <$> meq

@@ -30,13 +30,16 @@ class LSym repr => Symantics repr where
   if_ :: repr Bool -> repr a -> repr a -> repr a
   concat_ :: repr String -> repr String -> repr String
 
-data DynTerm repr = forall t. DynTerm (repr t)
+data DynTerm repr = forall t. DynTerm (TQ t) (repr t)
 
 instance (Monad m, LSym repr) => From m Literal (DynTerm repr) where
-  from (Int x)    = return $ DynTerm $ int x
-  from (Bool x)   = return $ DynTerm $ bool x
-  from (String x) = return $ DynTerm $ string x
-  from Unit       = return $ DynTerm $ unit
+  from (Int x)    = return $ DynTerm tint $ int x
+  from (Bool x)   = return $ DynTerm tbool $ bool x
+  from (String x) = return $ DynTerm tstring $ string x
+  from Unit       = return $ DynTerm tunit $ unit
 
 instance (Monad m, Symantics repr) => From m Term (DynTerm repr) where
   from (Lit l) = from l
+  from (Print t) = do
+    DynTerm (TQ ty) x <- from t
+    maybe (fail "not string") (return . DynTerm tunit . pr) $ asString ty x
