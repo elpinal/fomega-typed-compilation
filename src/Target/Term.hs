@@ -1,4 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Target.Term
   ( LSym(..)
@@ -7,13 +9,15 @@ module Target.Term
   , module Target.Type
   ) where
 
+import Conversion
 import qualified Facade.Term as F
+import Facade.Term (Literal(..), Term(..))
 import Target.Type
 
 class LSym repr where
-  int :: repr Int
-  bool :: repr Bool
-  string :: repr String
+  int :: Int -> repr Int
+  bool :: Bool -> repr Bool
+  string :: String -> repr String
   unit :: repr ()
 
 class LSym repr => Symantics repr where
@@ -28,5 +32,11 @@ class LSym repr => Symantics repr where
 
 data DynTerm repr = forall t. DynTerm (repr t)
 
-from :: F.Term -> DynTerm repr
-from = undefined
+instance (Monad m, LSym repr) => From m Literal (DynTerm repr) where
+  from (Int x)    = return $ DynTerm $ int x
+  from (Bool x)   = return $ DynTerm $ bool x
+  from (String x) = return $ DynTerm $ string x
+  from Unit       = return $ DynTerm $ unit
+
+instance (Monad m, Symantics repr) => From m Term (DynTerm repr) where
+  from (Lit l) = from l
