@@ -13,6 +13,9 @@ module Target.Term
   , module Target.Type
   ) where
 
+import Control.Applicative
+import Control.Monad.IO.Class
+
 import Conversion
 import qualified Facade.Term as F
 import Facade.Term (Literal(..), Term(..), BaseType(..))
@@ -123,3 +126,30 @@ convert' = from
 
 convert :: Symantics repr => Term -> DynTerm repr ()
 convert = ($ ()) . unM . convert'
+
+newtype R h a = R { unR :: h -> E a }
+
+lit :: a -> R h a
+lit = R . const . pure
+
+instance LSym R where
+  int x    = lit x
+  bool x   = lit x
+  string x = lit x
+  unit     = lit ()
+
+instance Symantics R where
+  vz            = R $ pure . fst
+  vs r          = R $ unR r . snd
+  abs_ r        = R $ \env -> pure $ \x -> unR r (x, env)
+  app r1 r2     = R $ liftA2 (<*>) (unR r1) $ unR r2
+  pr r          = R $ \env -> unR r env >>= liftIO . putStrLn
+  int2string r  = R $ fmap show . unR r
+  bool2string r = R $ fmap show . unR r
+  sub r1 r2     = R $ \env -> liftA2 (-) (unR r1 env) $ unR r2 env
+  if_ r1 r2 r3  = R $ \env -> do
+    b <- unR r1 env
+    if b
+      then unR r2 env
+      else unR r3 env
+  concat_ r1 r2 = R $ \env -> liftA2 (<>) (unR r1 env) $ unR r2 env

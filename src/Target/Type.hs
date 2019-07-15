@@ -17,6 +17,7 @@ module Target.Type
   , E(..)
   ) where
 
+import Control.Monad.IO.Class
 import Data.Coerce
 
 class BSym repr where
@@ -26,7 +27,7 @@ class BSym repr where
   tunit :: repr ()
 
 newtype E a = E { unE :: IO a }
-  deriving (Functor, Applicative, Monad)
+  deriving (Functor, Applicative, Monad, MonadIO)
 
 class BSym repr => TSym repr where
   tarrow :: repr a -> repr b -> repr (a -> E b)
