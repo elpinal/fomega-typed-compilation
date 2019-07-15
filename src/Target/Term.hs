@@ -78,7 +78,7 @@ instance EnvM M () () where
 instance EnvM M gamma h => EnvM M (V a, gamma) (a, h) where
   withBinding tq (M m) = M $ \gamma -> m (V tq, gamma)
   lookupVar (F.Variable 0) = do
-    (V tq, gamma) <- M id
+    (V tq, _) <- M id
     return $ Just $ DynTerm tq vz
   lookupVar (F.Variable n) = do
     x <- M $ \(_, gamma) -> unM (lookupVar (F.Variable $ n - 1)) gamma
