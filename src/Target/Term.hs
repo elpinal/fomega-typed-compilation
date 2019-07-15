@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Target.Term
   ( LSym(..)
@@ -17,20 +18,22 @@ import Facade.Term (Literal(..), Term(..), BaseType(..))
 import Target.Type
 
 class LSym repr where
-  int :: Int -> repr Int
-  bool :: Bool -> repr Bool
-  string :: String -> repr String
-  unit :: repr ()
+  int :: Int -> repr h Int
+  bool :: Bool -> repr h Bool
+  string :: String -> repr h String
+  unit :: repr h ()
 
 class LSym repr => Symantics repr where
-  abs_ :: (repr a -> repr b) -> repr (a -> b)
-  app :: repr (a -> b) -> repr a -> repr b
-  pr :: repr String -> repr ()
-  int2string :: repr Int -> repr String
-  bool2string :: repr Bool -> repr String
-  sub :: repr Int -> repr Int -> repr Int
-  if_ :: repr Bool -> repr a -> repr a -> repr a
-  concat_ :: repr String -> repr String -> repr String
+  vz :: repr (a, h) a
+  vs :: repr h a -> repr (b, h) a
+  abs_ :: repr (a, h) b -> repr h (a -> b)
+  app :: repr h (a -> b) -> repr h a -> repr h b
+  pr :: repr h String -> repr h ()
+  int2string :: repr h Int -> repr h String
+  bool2string :: repr h Bool -> repr h String
+  sub :: repr h Int -> repr h Int -> repr h Int
+  if_ :: repr h Bool -> repr h a -> repr h a -> repr h a
+  concat_ :: repr h String -> repr h String -> repr h String
 
 data Type = forall t. Type (TQ t)
 
@@ -47,22 +50,22 @@ instance Monad m => From m F.Type Type where
     Type tq2 <- from ty2
     return $ Type $ tarrow tq1 tq2
 
-data DynTerm repr = forall t. DynTerm (TQ t) (repr t)
+data DynTerm repr h = forall t. DynTerm (TQ t) (repr h t)
 
-instance (Monad m, LSym repr) => From m Literal (DynTerm repr) where
+instance (Monad m, LSym repr) => From m Literal (DynTerm repr h) where
   from (Int x)    = return $ DynTerm tint $ int x
   from (Bool x)   = return $ DynTerm tbool $ bool x
   from (String x) = return $ DynTerm tstring $ string x
   from Unit       = return $ DynTerm tunit $ unit
 
-realize :: TSym (As t) => DynTerm repr -> Maybe (repr t)
+realize :: TSym (As t) => DynTerm repr h -> Maybe (repr h t)
 realize (DynTerm (TQ ty) x) = as ty x
 
-class Monad m => EnvM m repr where
-  withBinding :: DynTerm repr -> m a -> m a
-  lookupVar :: F.Variable -> m (Maybe (DynTerm repr))
+class Monad (m h) => EnvM m repr h where
+  withBinding :: repr h t -> m (t, h) a -> m h a
+  lookupVar :: F.Variable -> m h (Maybe (DynTerm repr h))
 
-instance (EnvM m repr, Symantics repr) => From m Term (DynTerm repr) where
+instance (EnvM m repr h, Symantics repr) => From (m h) Term (DynTerm repr h) where
   from (Var v)         = lookupVar v >>= maybe (fail $ "unbound variable: " ++ show v) return
   from (Lit l)         = from l
   from (Print t)       = from t >>= maybe (fail "not string") (return . DynTerm tunit . pr) . realize
