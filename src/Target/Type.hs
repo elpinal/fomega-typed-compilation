@@ -1,5 +1,7 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Target.Type
   ( BSym(..)
@@ -8,6 +10,8 @@ module Target.Type
   , As
   , as
   ) where
+
+import Data.Coerce
 
 class BSym repr where
   tint :: repr Int
@@ -34,6 +38,20 @@ newtype Equality a b = Equality { getEquality :: forall c. c a -> c b }
 
 refl :: Equality a a
 refl = Equality id
+
+trans :: Equality a u -> Equality u b -> Equality a b
+trans eq1 eq2 = getEquality eq2 eq1
+
+newtype Symm a b = Symm (Equality b a)
+
+symm :: Equality a b -> Equality b a
+symm eq = coerce $ getEquality eq $ Symm refl
+
+newtype Y t a b = Y { unY :: Equality t (a -> b) }
+newtype Z t a b = Z { unZ :: Equality t (b -> a) }
+
+eqArrow :: Equality a1 a2 -> Equality b1 b2 -> Equality (a1 -> b1) (a2 -> b2)
+eqArrow eq1 eq2 = unZ $ getEquality eq1 $ Z $ unY $ getEquality eq2 $ Y refl
 
 newtype As t a = As (Maybe (Equality a t))
 
@@ -64,5 +82,45 @@ instance BSym (As String) where
 instance TSym (As String) where
   tarrow _ _ = As Nothing
 
+instance BSym (As ()) where
+  tint    = As Nothing
+  tbool   = As Nothing
+  tstring = As Nothing
+  tunit   = As $ return refl
+
+instance TSym (As ()) where
+  tarrow _ _ = As Nothing
+
+data AsArrow a = forall b1 b2. AsArrow (TQ a) (Maybe (TQ b1, TQ b2, Equality a (b1 -> b2)))
+
+instance BSym AsArrow where
+  tint    = AsArrow tint Nothing
+  tbool   = AsArrow tbool Nothing
+  tstring = AsArrow tstring Nothing
+  tunit   = AsArrow tunit Nothing
+
+instance TSym AsArrow where
+  tarrow (AsArrow ty1 _) (AsArrow ty2 _) = AsArrow (tarrow ty1 ty2) $ return (ty1, ty2, refl)
+
 as :: As t a -> c a -> Maybe (c t)
 as (As meq) x = ($ x) . getEquality <$> meq
+
+asSymm :: TSym (As t) => TQ b -> Maybe (Equality t b)
+asSymm (TQ (As meq)) = symm <$> meq
+
+newtype Cast a = Cast (forall b. TQ b -> Maybe (Equality a b))
+
+instance BSym Cast where
+  tint    = Cast asSymm
+  tbool   = Cast asSymm
+  tstring = Cast asSymm
+  tunit   = Cast asSymm
+
+instance TSym Cast where
+  tarrow (Cast t1) (Cast t2) = Cast $ f . getTQ
+    where
+      f (AsArrow _ m) = do
+        (ty1, ty2, eq) <- m
+        x <- t1 ty1
+        y <- t2 ty2
+        return $ trans (eqArrow x y) $ symm eq
