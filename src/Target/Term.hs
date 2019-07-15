@@ -58,3 +58,7 @@ instance (Monad m, Symantics repr) => From m Term (DynTerm repr) where
     DynTerm ty3 z <- from t3
     z <- maybe (fail "type mismatch") return $ cast ty3 z ty2
     return $ DynTerm ty2 $ if_ x y z
+  from (Concat t1 t2) = do
+    x <- from t1 >>= maybe (fail "not string") return . realize
+    y <- from t2 >>= maybe (fail "not string") return . realize
+    return $ DynTerm tstring $ concat_ x y
