@@ -13,7 +13,7 @@ module Target.Term
 
 import Conversion
 import qualified Facade.Term as F
-import Facade.Term (Literal(..), Term(..))
+import Facade.Term (Literal(..), Term(..), BaseType(..))
 import Target.Type
 
 class LSym repr where
@@ -32,6 +32,21 @@ class LSym repr => Symantics repr where
   if_ :: repr Bool -> repr a -> repr a -> repr a
   concat_ :: repr String -> repr String -> repr String
 
+data Type = forall t. Type (TQ t)
+
+instance Monad m => From m BaseType Type where
+  from TInt    = return $ Type tint
+  from TBool   = return $ Type tbool
+  from TString = return $ Type tstring
+  from TUnit   = return $ Type tunit
+
+instance Monad m => From m F.Type Type where
+  from (F.BaseType b)     = from b
+  from (F.TArrow ty1 ty2) = do
+    Type tq1 <- from ty1
+    Type tq2 <- from ty2
+    return $ Type $ tarrow tq1 tq2
+
 data DynTerm repr = forall t. DynTerm (TQ t) (repr t)
 
 instance (Monad m, LSym repr) => From m Literal (DynTerm repr) where
@@ -43,7 +58,12 @@ instance (Monad m, LSym repr) => From m Literal (DynTerm repr) where
 realize :: TSym (As t) => DynTerm repr -> Maybe (repr t)
 realize (DynTerm (TQ ty) x) = as ty x
 
-instance (Monad m, Symantics repr) => From m Term (DynTerm repr) where
+class Monad m => EnvM m repr where
+  withBinding :: DynTerm repr -> m a -> m a
+  lookupVar :: F.Variable -> m (Maybe (DynTerm repr))
+
+instance (EnvM m repr, Symantics repr) => From m Term (DynTerm repr) where
+  from (Var v)         = lookupVar v >>= maybe (fail $ "unbound variable: " ++ show v) return
   from (Lit l)         = from l
   from (Print t)       = from t >>= maybe (fail "not string") (return . DynTerm tunit . pr) . realize
   from (Int2String t)  = from t >>= maybe (fail "not integer") (return . DynTerm tstring . int2string) . realize
