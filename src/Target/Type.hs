@@ -29,7 +29,7 @@ newtype E a = E { unE :: IO a }
   deriving (Functor, Applicative, Monad)
 
 class BSym repr => TSym repr where
-  tarrow :: repr a -> repr b -> repr (a -> b)
+  tarrow :: repr a -> repr b -> repr (a -> E b)
   impure :: repr a -> repr (E a)
 
 -- A type quantifying over TSym interpreters.
@@ -111,7 +111,7 @@ instance TSym (As ()) where
   tarrow _ _ = As Nothing
   impure _   = As Nothing
 
-data AsArrow a = forall b1 b2. AsArrow (TQ a) (Maybe (TQ b1, TQ b2, Equality a (b1 -> b2)))
+data AsArrow a = forall b1 b2. AsArrow (TQ a) (Maybe (TQ b1, TQ b2, Equality a (b1 -> E b2)))
 
 instance BSym AsArrow where
   tint    = AsArrow tint Nothing
@@ -156,7 +156,7 @@ instance TSym Cast where
         (ty1, ty2, eq) <- m
         x <- t1 ty1
         y <- t2 ty2
-        return $ trans (eqArrow x y) $ symm eq
+        return $ trans (eqArrow x $ eqE y) $ symm eq
   impure (Cast t) = Cast $ f . getTQ
     where
       f (AsImpure _ m) = do

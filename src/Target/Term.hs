@@ -27,8 +27,8 @@ class LSym repr where
 class LSym repr => Symantics repr where
   vz :: repr (a, h) a
   vs :: repr h a -> repr (b, h) a
-  abs_ :: repr (a, h) b -> repr h (a -> b)
-  app :: repr h (a -> b) -> repr h a -> repr h b
+  abs_ :: repr (a, h) b -> repr h (a -> E b)
+  app :: repr h (a -> E b) -> repr h a -> repr h (E b)
   pr :: repr h String -> repr h ()
   int2string :: repr h Int -> repr h String
   bool2string :: repr h Bool -> repr h String
@@ -98,7 +98,7 @@ instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr
     AsArrow _ m <- return $ getTQ ty1
     (ty11, ty12, eq) <- maybe (fail "not function") return m
     y <- maybe (fail "type mismatch") return $ cast ty2 y ty11
-    return $ DynTerm ty12 $ app (getEquality eq x) y
+    return $ DynTerm (impure ty12) $ app (getEquality eq x) y
   from (Lit l)         = from l
   from (Print t)       = from t >>= maybe (fail "not string") (return . DynTerm tunit . pr) . realize
   from (Int2String t)  = from t >>= maybe (fail "not integer") (return . DynTerm tstring . int2string) . realize
