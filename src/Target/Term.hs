@@ -117,3 +117,9 @@ instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr
     x <- from t1 >>= maybe (fail "not string") return . realize
     y <- from t2 >>= maybe (fail "not string") return . realize
     return $ DynTerm tstring $ concat_ x y
+
+convert' :: Symantics repr => Term -> M () () (DynTerm repr ())
+convert' = from
+
+convert :: Symantics repr => Term -> DynTerm repr ()
+convert = ($ ()) . unM . convert'
