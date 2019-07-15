@@ -9,6 +9,7 @@ module Target.Type
   , TQ(..)
   , As
   , as
+  , cast
   ) where
 
 import Data.Coerce
@@ -124,3 +125,6 @@ instance TSym Cast where
         x <- t1 ty1
         y <- t2 ty2
         return $ trans (eqArrow x y) $ symm eq
+
+cast :: TQ a -> c a -> TQ b -> Maybe (c b)
+cast (TQ (Cast f)) ca tb = ($ ca) . getEquality <$> f tb

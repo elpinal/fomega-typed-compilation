@@ -52,3 +52,9 @@ instance (Monad m, Symantics repr) => From m Term (DynTerm repr) where
     x <- from t1 >>= maybe (fail "not integer") return . realize
     y <- from t2 >>= maybe (fail "not integer") return . realize
     return $ DynTerm tint $ sub x y
+  from (If t1 t2 t3) = do
+    x <- from t1 >>= maybe (fail "not boolean") return . realize
+    DynTerm ty2 y <- from t2
+    DynTerm ty3 z <- from t3
+    z <- maybe (fail "type mismatch") return $ cast ty3 z ty2
+    return $ DynTerm ty2 $ if_ x y z
