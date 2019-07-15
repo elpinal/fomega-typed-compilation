@@ -154,3 +154,10 @@ instance Symantics R where
       then unR r2 env
       else unR r3 env
   concat_ r1 r2 = R $ \env -> liftA2 (<>) (unR r1 env) $ unR r2 env
+
+-- Evaluate a facade term in empty environment.
+evalF :: Term -> E ()
+evalF t = f $ convert t
+  where
+    f :: DynTerm R () -> E ()
+    f (DynTerm _ r) = void $ unR r ()
