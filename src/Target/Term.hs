@@ -1,6 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 
@@ -61,12 +62,36 @@ instance (Monad m, LSym repr) => From m Literal (DynTerm repr h) where
 realize :: TSym (As t) => DynTerm repr h -> Maybe (repr h t)
 realize (DynTerm (TQ ty) x) = as ty x
 
-class Monad (m h) => EnvM m repr h where
-  withBinding :: repr h t -> m (t, h) a -> m h a
-  lookupVar :: F.Variable -> m h (Maybe (DynTerm repr h))
+newtype V t = V (TQ t)
 
-instance (EnvM m repr h, Symantics repr) => From (m h) Term (DynTerm repr h) where
-  from (Var v)         = lookupVar v >>= maybe (fail $ "unbound variable: " ++ show v) return
+class Monad (m gamma h) => EnvM m gamma h where
+  withBinding :: TQ t -> m (V t, gamma) (t, h) a -> m gamma h a
+  lookupVar :: Symantics repr => F.Variable -> m gamma h (Maybe (DynTerm repr h))
+
+newtype M gamma h a = M { unM :: gamma -> a }
+  deriving (Functor, Applicative, Monad)
+
+instance EnvM M () () where
+  withBinding tq (M m) = M $ \gamma -> m (V tq, gamma)
+  lookupVar _ = return Nothing
+
+instance EnvM M gamma h => EnvM M (V a, gamma) (a, h) where
+  withBinding tq (M m) = M $ \gamma -> m (V tq, gamma)
+  lookupVar (F.Variable 0) = do
+    (V tq, gamma) <- M id
+    return $ Just $ DynTerm tq vz
+  lookupVar (F.Variable n) = do
+    x <- M $ \(_, gamma) -> unM (lookupVar (F.Variable $ n - 1)) gamma
+    case x of
+      Just (DynTerm tq t) -> return $ Just $ DynTerm tq $ vs t
+      Nothing             -> return Nothing
+
+instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr h) where
+  from (Var v)    = lookupVar v >>= maybe (fail $ "unbound variable: " ++ show v) return
+  from (Abs ty t) = do
+    Type ty1 <- from ty
+    DynTerm tq x <- withBinding ty1 $ from t
+    return $ DynTerm (tarrow ty1 tq) $ abs_ x
   from (Lit l)         = from l
   from (Print t)       = from t >>= maybe (fail "not string") (return . DynTerm tunit . pr) . realize
   from (Int2String t)  = from t >>= maybe (fail "not integer") (return . DynTerm tstring . int2string) . realize
