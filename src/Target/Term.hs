@@ -92,6 +92,13 @@ instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr
     Type ty1 <- from ty
     DynTerm tq x <- withBinding ty1 $ from t
     return $ DynTerm (tarrow ty1 tq) $ abs_ x
+  from (App t1 t2) = do
+    DynTerm ty1 x <- from t1
+    DynTerm ty2 y <- from t2
+    AsArrow _ m <- return $ getTQ ty1
+    (ty11, ty12, eq) <- maybe (fail "not function") return m
+    y <- maybe (fail "type mismatch") return $ cast ty2 y ty11
+    return $ DynTerm ty12 $ app (getEquality eq x) y
   from (Lit l)         = from l
   from (Print t)       = from t >>= maybe (fail "not string") (return . DynTerm tunit . pr) . realize
   from (Int2String t)  = from t >>= maybe (fail "not integer") (return . DynTerm tstring . int2string) . realize

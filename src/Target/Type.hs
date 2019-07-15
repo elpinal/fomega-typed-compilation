@@ -7,8 +7,10 @@ module Target.Type
   ( BSym(..)
   , TSym(..)
   , TQ(..)
+  , Equality(..)
   , As
   , as
+  , AsArrow(..)
   , cast
   ) where
 
