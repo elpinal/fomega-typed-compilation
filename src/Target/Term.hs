@@ -14,6 +14,7 @@ module Target.Term
   ) where
 
 import Control.Applicative
+import Control.Monad
 import Control.Monad.IO.Class
 
 import Conversion
@@ -31,7 +32,7 @@ class LSym repr => Symantics repr where
   vz :: repr (a, h) a
   vs :: repr h a -> repr (b, h) a
   abs_ :: repr (a, h) b -> repr h (a -> E b)
-  app :: repr h (a -> E b) -> repr h a -> repr h (E b)
+  app :: repr h (a -> E b) -> repr h a -> repr h b
   pr :: repr h String -> repr h ()
   int2string :: repr h Int -> repr h String
   bool2string :: repr h Bool -> repr h String
@@ -101,7 +102,7 @@ instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr
     AsArrow _ m <- return $ getTQ ty1
     (ty11, ty12, eq) <- maybe (fail "not function") return m
     y <- maybe (fail "type mismatch") return $ cast ty2 y ty11
-    return $ DynTerm (impure ty12) $ app (getEquality eq x) y
+    return $ DynTerm ty12 $ app (getEquality eq x) y
   from (Lit l)         = from l
   from (Print t)       = from t >>= maybe (fail "not string") (return . DynTerm tunit . pr) . realize
   from (Int2String t)  = from t >>= maybe (fail "not integer") (return . DynTerm tstring . int2string) . realize
@@ -142,7 +143,7 @@ instance Symantics R where
   vz            = R $ pure . fst
   vs r          = R $ unR r . snd
   abs_ r        = R $ \env -> pure $ \x -> unR r (x, env)
-  app r1 r2     = R $ liftA2 (<*>) (unR r1) $ unR r2
+  app r1 r2     = R $ \env -> join $ unR r1 env <*> unR r2 env
   pr r          = R $ \env -> unR r env >>= liftIO . putStrLn
   int2string r  = R $ fmap show . unR r
   bool2string r = R $ fmap show . unR r
