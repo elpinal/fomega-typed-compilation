@@ -76,39 +76,39 @@ realize (DynTerm (TQ ty) x) = as ty x
 
 newtype V i t = V (TQ i t)
 
-class Monad (m gamma h i) => EnvM m gamma h i where
-  withBinding :: TQ i t -> m (V i t, gamma) (t, h) i a -> m gamma h i a
-  lookupVar :: Symantics repr => F.Variable -> m gamma h i (Maybe (DynTerm repr h i))
+class Monad (m gamma h delta i) => EnvM m gamma h delta i where
+  withBinding :: TQ i t -> m (V i t, gamma) (t, h) delta i a -> m gamma h delta i a
+  lookupVar :: Symantics repr => F.Variable -> m gamma h delta i (Maybe (DynTerm repr h i))
 
-newtype M gamma h i a = M { unM :: gamma -> Either String a }
+newtype M gamma h delta i a = M { unM :: delta -> gamma -> Either String a }
   deriving (Functor)
 
-instance Applicative (M gamma h i) where
-  pure x = M $ const $ pure x
-  M f <*> M x = M $ liftA2 (<*>) f x
+instance Applicative (M gamma h delta i) where
+  pure x = M $ const $ const $ pure x
+  M f <*> M x = M $ \delta -> liftA2 (<*>) (f delta) (x delta)
 
-instance Monad (M gamma h i) where
-  M m >>= f = M $ \env -> either Left (\x -> unM (f x) env) $ m env
+instance Monad (M gamma h delta i) where
+  M m >>= f = M $ \delta gamma -> either Left (\x -> unM (f x) delta gamma) $ m delta gamma
 
-instance EnvM M () () i where
-  withBinding tq (M m) = M $ \gamma -> m (V tq, gamma)
+instance EnvM M () () delta i where
+  withBinding tq (M m) = M $ \delta gamma -> m delta (V tq, gamma)
   lookupVar _ = return Nothing
 
-instance EnvM M gamma h i => EnvM M (V i a, gamma) (a, h) i where
-  withBinding tq (M m) = M $ \gamma -> m (V tq, gamma)
+instance EnvM M gamma h delta i => EnvM M (V i a, gamma) (a, h) delta i where
+  withBinding tq (M m) = M $ \delta gamma -> m delta (V tq, gamma)
   lookupVar (F.Variable 0) = do
-    (V tq, _) <- M pure
+    (V tq, _) <- M $ const pure
     return $ Just $ DynTerm tq vz
   lookupVar (F.Variable n) = do
-    x <- M $ \(_, gamma) -> unM (lookupVar (F.Variable $ n - 1)) gamma
+    x <- M $ \delta (_, gamma) -> unM (lookupVar (F.Variable $ n - 1)) delta gamma
     case x of
       Just (DynTerm tq t) -> return $ Just $ DynTerm tq $ vs t
       Nothing             -> return Nothing
 
-throwError :: String -> M gamma h i a
-throwError = M . const . Left
+throwError :: String -> M gamma h delta i a
+throwError = M . const . const . Left
 
-instance (EnvM M gamma h i, Symantics repr) => From (M gamma h i) Term (DynTerm repr h i) where
+instance (EnvM M gamma h delta i, Symantics repr) => From (M gamma h delta i) Term (DynTerm repr h i) where
   from (Var v)    = lookupVar v >>= maybe (throwError $ "unbound variable: " ++ show v) return
   from (Abs ty t) = do
     Type ty1 <- from ty
@@ -141,11 +141,11 @@ instance (EnvM M gamma h i, Symantics repr) => From (M gamma h i) Term (DynTerm 
     y <- from t2 >>= maybe (throwError "not string") return . realize
     return $ DynTerm tstring $ concat_ x y
 
-convert' :: Symantics repr => Term -> M () () i (DynTerm repr () i)
+convert' :: Symantics repr => Term -> M () () delta i (DynTerm repr () i)
 convert' = from
 
-convert :: Symantics repr => Term -> Either String (DynTerm repr () i)
-convert = ($ ()) . unM . convert'
+convert :: Symantics repr => i -> Term -> Either String (DynTerm repr () i)
+convert i = ($ ()) . ($ i) . unM . convert'
 
 newtype R h i a = R { unR :: h -> E a }
 
@@ -176,8 +176,8 @@ instance Symantics R where
   concat_ r1 r2 = R $ \env -> liftA2 (<>) (unR r1 env) $ unR r2 env
 
 -- Evaluate a facade term in empty environment.
-evalF :: Term -> Either String (E ())
-evalF t = f <$> convert t
+evalF :: i -> Term -> Either String (E ())
+evalF i t = f <$> convert i t
   where
     f :: DynTerm R () i -> E ()
     f (DynTerm _ r) = void $ unR r ()
