@@ -26,6 +26,7 @@ data Term
   | Print Term
   | Int2String Term
   | Bool2String Term
+  | Add
   | Sub Term Term
   | If Term Term Term
   | Concat Term Term

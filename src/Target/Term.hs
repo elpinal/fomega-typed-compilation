@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Target.Term
   ( LSym(..)
@@ -29,14 +30,20 @@ class LSym repr where
   string :: String -> repr h String
   unit :: repr h ()
 
+type Arrow a b = a -> E b
+
+infixr 2 -@>
+type a -@> b = Arrow a b
+
 class LSym repr => Symantics repr where
   vz :: repr (a, h) a
   vs :: repr h a -> repr (b, h) a
-  abs_ :: repr (a, h) b -> repr h (a -> E b)
-  app :: repr h (a -> E b) -> repr h a -> repr h b
+  abs_ :: repr (a, h) b -> repr h (a -@> b)
+  app :: repr h (a -@> b) -> repr h a -> repr h b
   pr :: repr h String -> repr h ()
   int2string :: repr h Int -> repr h String
   bool2string :: repr h Bool -> repr h String
+  add :: repr h (Int -@> Int -@> Int)
   sub :: repr h Int -> repr h Int -> repr h Int
   if_ :: repr h Bool -> repr h a -> repr h a -> repr h a
   concat_ :: repr h String -> repr h String -> repr h String
@@ -118,6 +125,7 @@ instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr
   from (Print t)       = from t >>= maybe (throwError "not string") (return . DynTerm tunit . pr) . realize
   from (Int2String t)  = from t >>= maybe (throwError "not integer") (return . DynTerm tstring . int2string) . realize
   from (Bool2String t) = from t >>= maybe (throwError "not boolean") (return . DynTerm tstring . bool2string) . realize
+  from Add             = return $ DynTerm (tarrow tint $ tarrow tint tint) $ add
   from (Sub t1 t2)     = do
     x <- from t1 >>= maybe (throwError "not integer") return . realize
     y <- from t2 >>= maybe (throwError "not integer") return . realize
@@ -158,6 +166,7 @@ instance Symantics R where
   pr r          = R $ \env -> unR r env >>= liftIO . putStrLn
   int2string r  = R $ fmap show . unR r
   bool2string r = R $ fmap show . unR r
+  add           = R $ const $ pure $ \x -> pure $ \y -> pure $ x + y
   sub r1 r2     = R $ \env -> liftA2 (-) (unR r1 env) $ unR r2 env
   if_ r1 r2 r3  = R $ \env -> do
     b <- unR r1 env
