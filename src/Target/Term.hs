@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -72,8 +73,15 @@ class Monad (m gamma h) => EnvM m gamma h where
   withBinding :: TQ t -> m (V t, gamma) (t, h) a -> m gamma h a
   lookupVar :: Symantics repr => F.Variable -> m gamma h (Maybe (DynTerm repr h))
 
-newtype M gamma h a = M { unM :: gamma -> a }
-  deriving (Functor, Applicative, Monad)
+newtype M gamma h a = M { unM :: gamma -> Either String a }
+  deriving (Functor)
+
+instance Applicative (M gamma h) where
+  pure x = M $ const $ pure x
+  M f <*> M x = M $ liftA2 (<*>) f x
+
+instance Monad (M gamma h) where
+  M m >>= f = M $ \env -> either Left (\x -> unM (f x) env) $ m env
 
 instance EnvM M () () where
   withBinding tq (M m) = M $ \gamma -> m (V tq, gamma)
@@ -82,7 +90,7 @@ instance EnvM M () () where
 instance EnvM M gamma h => EnvM M (V a, gamma) (a, h) where
   withBinding tq (M m) = M $ \gamma -> m (V tq, gamma)
   lookupVar (F.Variable 0) = do
-    (V tq, _) <- M id
+    (V tq, _) <- M pure
     return $ Just $ DynTerm tq vz
   lookupVar (F.Variable n) = do
     x <- M $ \(_, gamma) -> unM (lookupVar (F.Variable $ n - 1)) gamma
@@ -90,8 +98,11 @@ instance EnvM M gamma h => EnvM M (V a, gamma) (a, h) where
       Just (DynTerm tq t) -> return $ Just $ DynTerm tq $ vs t
       Nothing             -> return Nothing
 
+throwError :: String -> M gamma h a
+throwError = M . const . Left
+
 instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr h) where
-  from (Var v)    = lookupVar v >>= maybe (fail $ "unbound variable: " ++ show v) return
+  from (Var v)    = lookupVar v >>= maybe (throwError $ "unbound variable: " ++ show v) return
   from (Abs ty t) = do
     Type ty1 <- from ty
     DynTerm tq x <- withBinding ty1 $ from t
@@ -100,32 +111,32 @@ instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr
     DynTerm ty1 x <- from t1
     DynTerm ty2 y <- from t2
     AsArrow _ m <- return $ getTQ ty1
-    (ty11, ty12, eq) <- maybe (fail "not function") return m
-    y <- maybe (fail "type mismatch") return $ cast ty2 y ty11
+    (ty11, ty12, eq) <- maybe (throwError "not function") return m
+    y <- maybe (throwError "type mismatch") return $ cast ty2 y ty11
     return $ DynTerm ty12 $ app (getEquality eq x) y
   from (Lit l)         = from l
-  from (Print t)       = from t >>= maybe (fail "not string") (return . DynTerm tunit . pr) . realize
-  from (Int2String t)  = from t >>= maybe (fail "not integer") (return . DynTerm tstring . int2string) . realize
-  from (Bool2String t) = from t >>= maybe (fail "not boolean") (return . DynTerm tstring . bool2string) . realize
+  from (Print t)       = from t >>= maybe (throwError "not string") (return . DynTerm tunit . pr) . realize
+  from (Int2String t)  = from t >>= maybe (throwError "not integer") (return . DynTerm tstring . int2string) . realize
+  from (Bool2String t) = from t >>= maybe (throwError "not boolean") (return . DynTerm tstring . bool2string) . realize
   from (Sub t1 t2)     = do
-    x <- from t1 >>= maybe (fail "not integer") return . realize
-    y <- from t2 >>= maybe (fail "not integer") return . realize
+    x <- from t1 >>= maybe (throwError "not integer") return . realize
+    y <- from t2 >>= maybe (throwError "not integer") return . realize
     return $ DynTerm tint $ sub x y
   from (If t1 t2 t3) = do
-    x <- from t1 >>= maybe (fail "not boolean") return . realize
+    x <- from t1 >>= maybe (throwError "not boolean") return . realize
     DynTerm ty2 y <- from t2
     DynTerm ty3 z <- from t3
-    z <- maybe (fail "type mismatch") return $ cast ty3 z ty2
+    z <- maybe (throwError "type mismatch") return $ cast ty3 z ty2
     return $ DynTerm ty2 $ if_ x y z
   from (Concat t1 t2) = do
-    x <- from t1 >>= maybe (fail "not string") return . realize
-    y <- from t2 >>= maybe (fail "not string") return . realize
+    x <- from t1 >>= maybe (throwError "not string") return . realize
+    y <- from t2 >>= maybe (throwError "not string") return . realize
     return $ DynTerm tstring $ concat_ x y
 
 convert' :: Symantics repr => Term -> M () () (DynTerm repr ())
 convert' = from
 
-convert :: Symantics repr => Term -> DynTerm repr ()
+convert :: Symantics repr => Term -> Either String (DynTerm repr ())
 convert = ($ ()) . unM . convert'
 
 newtype R h a = R { unR :: h -> E a }
@@ -156,8 +167,8 @@ instance Symantics R where
   concat_ r1 r2 = R $ \env -> liftA2 (<>) (unR r1 env) $ unR r2 env
 
 -- Evaluate a facade term in empty environment.
-evalF :: Term -> E ()
-evalF t = f $ convert t
+evalF :: Term -> Either String (E ())
+evalF t = f <$> convert t
   where
     f :: DynTerm R () -> E ()
     f (DynTerm _ r) = void $ unR r ()
