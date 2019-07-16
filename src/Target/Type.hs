@@ -21,20 +21,20 @@ import Control.Monad.IO.Class
 import Data.Coerce
 
 class BSym repr where
-  tint :: repr Int
-  tbool :: repr Bool
-  tstring :: repr String
-  tunit :: repr ()
+  tint :: repr i Int
+  tbool :: repr i Bool
+  tstring :: repr i String
+  tunit :: repr i ()
 
 newtype E a = E { unE :: IO a }
   deriving (Functor, Applicative, Monad, MonadIO)
 
 class BSym repr => TSym repr where
-  tarrow :: repr a -> repr b -> repr (a -> E b)
-  impure :: repr a -> repr (E a)
+  tarrow :: repr i a -> repr i b -> repr i (a -> E b)
+  impure :: repr i a -> repr i (E a)
 
 -- A type quantifying over TSym interpreters.
-newtype TQ t = TQ { getTQ :: forall repr. TSym repr => repr t }
+newtype TQ i t = TQ { getTQ :: forall repr. TSym repr => repr i t }
 
 instance BSym TQ where
   tint = TQ tint
@@ -70,7 +70,7 @@ newtype EqE t a = EqE { unEqE :: Equality t (E a) }
 eqE :: Equality a b -> Equality (E a) (E b)
 eqE eq = unEqE $ getEquality eq $ EqE refl
 
-newtype As t a = As (Maybe (Equality a t))
+newtype As t i a = As (Maybe (Equality a t))
 
 instance BSym (As Int) where
   tint    = As $ return refl
@@ -112,7 +112,7 @@ instance TSym (As ()) where
   tarrow _ _ = As Nothing
   impure _   = As Nothing
 
-data AsArrow a = forall b1 b2. AsArrow (TQ a) (Maybe (TQ b1, TQ b2, Equality a (b1 -> E b2)))
+data AsArrow i a = forall b1 b2. AsArrow (TQ i a) (Maybe (TQ i b1, TQ i b2, Equality a (b1 -> E b2)))
 
 instance BSym AsArrow where
   tint    = AsArrow tint Nothing
@@ -124,7 +124,7 @@ instance TSym AsArrow where
   tarrow (AsArrow ty1 _) (AsArrow ty2 _) = AsArrow (tarrow ty1 ty2) $ return (ty1, ty2, refl)
   impure (AsArrow ty _)                  = AsArrow (impure ty) Nothing
 
-data AsImpure a = forall b. AsImpure (TQ a) (Maybe (TQ b, Equality a (E b)))
+data AsImpure i a = forall b. AsImpure (TQ i a) (Maybe (TQ i b, Equality a (E b)))
 
 instance BSym AsImpure where
   tint    = AsImpure tint Nothing
@@ -136,13 +136,13 @@ instance TSym AsImpure where
   tarrow (AsImpure ty1 _) (AsImpure ty2 _) = AsImpure (tarrow ty1 ty2) Nothing
   impure (AsImpure ty _)                   = AsImpure (impure ty) $ return (ty, refl)
 
-as :: As t a -> c a -> Maybe (c t)
+as :: As t i a -> c a -> Maybe (c t)
 as (As meq) x = ($ x) . getEquality <$> meq
 
-asSymm :: TSym (As t) => TQ b -> Maybe (Equality t b)
+asSymm :: TSym (As t) => TQ i b -> Maybe (Equality t b)
 asSymm (TQ (As meq)) = symm <$> meq
 
-newtype Cast a = Cast (forall b. TQ b -> Maybe (Equality a b))
+newtype Cast i a = Cast (forall b. TQ i b -> Maybe (Equality a b))
 
 instance BSym Cast where
   tint    = Cast asSymm
@@ -165,5 +165,5 @@ instance TSym Cast where
         x <- t ty
         return $ trans (eqE x) $ symm eq
 
-cast :: TQ a -> c a -> TQ b -> Maybe (c b)
+cast :: TQ i a -> c a -> TQ i b -> Maybe (c b)
 cast (TQ (Cast f)) ca tb = ($ ca) . getEquality <$> f tb

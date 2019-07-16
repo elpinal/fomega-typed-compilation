@@ -25,10 +25,10 @@ import Facade.Term (Literal(..), Term(..), BaseType(..))
 import Target.Type
 
 class LSym repr where
-  int :: Int -> repr h Int
-  bool :: Bool -> repr h Bool
-  string :: String -> repr h String
-  unit :: repr h ()
+  int :: Int -> repr h i Int
+  bool :: Bool -> repr h i Bool
+  string :: String -> repr h i String
+  unit :: repr h i ()
 
 type Arrow a b = a -> E b
 
@@ -36,65 +36,65 @@ infixr 2 -@>
 type a -@> b = Arrow a b
 
 class LSym repr => Symantics repr where
-  vz :: repr (a, h) a
-  vs :: repr h a -> repr (b, h) a
-  abs_ :: repr (a, h) b -> repr h (a -@> b)
-  app :: repr h (a -@> b) -> repr h a -> repr h b
-  pr :: repr h String -> repr h ()
-  int2string :: repr h Int -> repr h String
-  bool2string :: repr h Bool -> repr h String
-  add :: repr h (Int -@> Int -@> Int)
-  sub :: repr h Int -> repr h Int -> repr h Int
-  if_ :: repr h Bool -> repr h a -> repr h a -> repr h a
-  concat_ :: repr h String -> repr h String -> repr h String
+  vz :: repr (a, h) i a
+  vs :: repr h i a -> repr (b, h) i a
+  abs_ :: repr (a, h) i b -> repr h i (a -@> b)
+  app :: repr h i (a -@> b) -> repr h i a -> repr h i b
+  pr :: repr h i String -> repr h i ()
+  int2string :: repr h i Int -> repr h i String
+  bool2string :: repr h i Bool -> repr h i String
+  add :: repr h i (Int -@> Int -@> Int)
+  sub :: repr h i Int -> repr h i Int -> repr h i Int
+  if_ :: repr h i Bool -> repr h i a -> repr h i a -> repr h i a
+  concat_ :: repr h i String -> repr h i String -> repr h i String
 
-data Type = forall t. Type (TQ t)
+data Type i = forall t. Type (TQ i t)
 
-instance Monad m => From m BaseType Type where
+instance Monad m => From m BaseType (Type i) where
   from TInt    = return $ Type tint
   from TBool   = return $ Type tbool
   from TString = return $ Type tstring
   from TUnit   = return $ Type tunit
 
-instance Monad m => From m F.Type Type where
+instance Monad m => From m F.Type (Type i) where
   from (F.BaseType b)     = from b
   from (F.TArrow ty1 ty2) = do
     Type tq1 <- from ty1
     Type tq2 <- from ty2
     return $ Type $ tarrow tq1 tq2
 
-data DynTerm repr h = forall t. DynTerm (TQ t) (repr h t)
+data DynTerm repr h i = forall t. DynTerm (TQ i t) (repr h i t)
 
-instance (Monad m, LSym repr) => From m Literal (DynTerm repr h) where
+instance (Monad m, LSym repr) => From m Literal (DynTerm repr h i) where
   from (Int x)    = return $ DynTerm tint $ int x
   from (Bool x)   = return $ DynTerm tbool $ bool x
   from (String x) = return $ DynTerm tstring $ string x
   from Unit       = return $ DynTerm tunit $ unit
 
-realize :: TSym (As t) => DynTerm repr h -> Maybe (repr h t)
+realize :: TSym (As t) => DynTerm repr h i -> Maybe (repr h i t)
 realize (DynTerm (TQ ty) x) = as ty x
 
-newtype V t = V (TQ t)
+newtype V i t = V (TQ i t)
 
-class Monad (m gamma h) => EnvM m gamma h where
-  withBinding :: TQ t -> m (V t, gamma) (t, h) a -> m gamma h a
-  lookupVar :: Symantics repr => F.Variable -> m gamma h (Maybe (DynTerm repr h))
+class Monad (m gamma h i) => EnvM m gamma h i where
+  withBinding :: TQ i t -> m (V i t, gamma) (t, h) i a -> m gamma h i a
+  lookupVar :: Symantics repr => F.Variable -> m gamma h i (Maybe (DynTerm repr h i))
 
-newtype M gamma h a = M { unM :: gamma -> Either String a }
+newtype M gamma h i a = M { unM :: gamma -> Either String a }
   deriving (Functor)
 
-instance Applicative (M gamma h) where
+instance Applicative (M gamma h i) where
   pure x = M $ const $ pure x
   M f <*> M x = M $ liftA2 (<*>) f x
 
-instance Monad (M gamma h) where
+instance Monad (M gamma h i) where
   M m >>= f = M $ \env -> either Left (\x -> unM (f x) env) $ m env
 
-instance EnvM M () () where
+instance EnvM M () () i where
   withBinding tq (M m) = M $ \gamma -> m (V tq, gamma)
   lookupVar _ = return Nothing
 
-instance EnvM M gamma h => EnvM M (V a, gamma) (a, h) where
+instance EnvM M gamma h i => EnvM M (V i a, gamma) (a, h) i where
   withBinding tq (M m) = M $ \gamma -> m (V tq, gamma)
   lookupVar (F.Variable 0) = do
     (V tq, _) <- M pure
@@ -105,10 +105,10 @@ instance EnvM M gamma h => EnvM M (V a, gamma) (a, h) where
       Just (DynTerm tq t) -> return $ Just $ DynTerm tq $ vs t
       Nothing             -> return Nothing
 
-throwError :: String -> M gamma h a
+throwError :: String -> M gamma h i a
 throwError = M . const . Left
 
-instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr h) where
+instance (EnvM M gamma h i, Symantics repr) => From (M gamma h i) Term (DynTerm repr h i) where
   from (Var v)    = lookupVar v >>= maybe (throwError $ "unbound variable: " ++ show v) return
   from (Abs ty t) = do
     Type ty1 <- from ty
@@ -141,15 +141,15 @@ instance (EnvM M gamma h, Symantics repr) => From (M gamma h) Term (DynTerm repr
     y <- from t2 >>= maybe (throwError "not string") return . realize
     return $ DynTerm tstring $ concat_ x y
 
-convert' :: Symantics repr => Term -> M () () (DynTerm repr ())
+convert' :: Symantics repr => Term -> M () () i (DynTerm repr () i)
 convert' = from
 
-convert :: Symantics repr => Term -> Either String (DynTerm repr ())
+convert :: Symantics repr => Term -> Either String (DynTerm repr () i)
 convert = ($ ()) . unM . convert'
 
-newtype R h a = R { unR :: h -> E a }
+newtype R h i a = R { unR :: h -> E a }
 
-lit :: a -> R h a
+lit :: a -> R h i a
 lit = R . const . pure
 
 instance LSym R where
@@ -179,5 +179,5 @@ instance Symantics R where
 evalF :: Term -> Either String (E ())
 evalF t = f <$> convert t
   where
-    f :: DynTerm R () -> E ()
+    f :: DynTerm R () i -> E ()
     f (DynTerm _ r) = void $ unR r ()
